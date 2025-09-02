@@ -1,0 +1,8 @@
+flask==3.0.2
+PyMuPDF==1.22.5
+pytesseract==0.3.10
+Pillow==10.2.0
+ollama==0.1.6
+Werkzeug==3.0.1
+pymongo==4.6.2
+bcrypt==4.1.2

@@ -1,0 +1,301 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Virtual environments
+venv/
+env/
+ENV/
+env.bak/
+venv.bak/
+.venv
+
+# IDE
+.vscode/
+.idea/
+*.iml
+*.ipr
+*.iws
+
+# Editor files
+*.swp
+*.swo
+*~
+.netrwhist
+\#*\#
+/.emacs.desktop
+/.emacs.desktop.lock
+*.elc
+auto-save-list
+tramp
+.\#*
+
+# OS
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Windows specific
+desktop.ini
+$RECYCLE.BIN/
+*.cab
+*.msi
+*.msix
+*.msm
+*.msp
+*.lnk
+*.url
+*.pif
+*.scr
+*.exe
+*.dll
+*.sys
+*.com
+*.bat
+*.cmd
+
+# macOS specific
+.AppleDouble
+.LSOverride
+Icon
+.fseventsd
+.fseventsd/
+.TemporaryItems
+.VolumeIcon.icns
+.com.apple.timemachine.donotpresent
+
+# Linux specific
+.directory
+.Trash-*
+.nfs*
+
+# Project specific
+uploads/
+cache/
+summaries/
+static/images/
+*.log
+*.log.*
+logs/
+debug.log
+error.log
+access.log
+
+# Environment variables
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Database
+*.db
+*.sqlite3
+*.sqlite
+
+# Temporary files
+*.tmp
+*.temp
+*.lock
+*.pid
+*.sock
+*.socket
+*.fifo
+*.pipe
+
+# Flask specific
+instance/
+.webassets-cache
+flask_session/
+*.session
+
+# MongoDB
+*.lock
+
+# Security and secrets
+secrets.json
+config.json
+*.key
+*.pem
+*.crt
+*.p12
+*.pwd
+*.pass
+*.secret
+*.token
+*.auth
+*.credential
+*.cred
+
+# Performance monitoring
+*.prof
+*.profile
+
+# Documentation build
+docs/_build/
+site/
+
+# Package managers
+pip-log.txt
+pip-delete-this-directory.txt
+Pipfile
+Pipfile.lock
+
+# Testing and coverage
+.pytest_cache/
+.coverage
+.coverage.*
+coverage.xml
+*.cover
+.hypothesis/
+htmlcov/
+
+# Type checking
+.mypy_cache/
+.dmypy.json
+dmypy.json
+.pyre/
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# IPython
+profile_default/
+ipython_config.py
+
+# pyenv
+.python-version
+
+# PEP 582
+__pypackages__/
+
+# Celery (if you add background tasks)
+celerybeat-schedule
+celerybeat.pid
+
+# Spyder project settings
+.spyderproject
+.spyproject
+
+# Rope project settings
+.ropeproject
+
+# Translations
+*.mo
+*.pot
+
+# Django stuff (if you ever migrate)
+local_settings.py
+db.sqlite3-journal
+
+# Scrapy stuff
+.scrapy
+
+# PyBuilder
+target/
+
+# SageMath parsed files
+*.sage.py
+
+# Node modules (if you add any frontend build tools)
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Large files that shouldn't be in git
+*.zip
+*.tar.gz
+*.rar
+*.7z
+
+# AI model cache
+models/
+*.model
+
+# PDF processing temporary files
+*.pdf.tmp
+extracted_*
+session_*
+temp_*
+processed_*
+analysis_*
+report_*
+output_*
+
+# Backup files
+*.bak
+*.backup
+*.old
+*.orig
+*.save
+*.sav
+*.copy
+*.dup
+*.duplicate
+
+# Additional important patterns
+*.orig
+*.rej
+*.patch
+*.diff
+
+# Sublime Text
+*.sublime-project
+*.sublime-workspace
+
+# Local development
+local/
+local_*
+dev/
+development/
+
+# Production
+production/
+prod/
+
+# Staging
+staging/
+stage/
+
+# Docker
+.dockerignore
+docker-compose.override.yml
+
+# Kubernetes
+*.kubeconfig
+
+# Terraform
+*.tfstate
+*.tfstate.*
+.terraform/
+.terraform.lock.hcl
+
+# Ansible
+*.retry
+
+# Vagrant
+.vagrant/
