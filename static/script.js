@@ -11,6 +11,9 @@ document.addEventListener('DOMContentLoaded', () => {
   const chatBox = document.getElementById('chatBox');
   const chatForm = document.getElementById('chatForm');
   const userInput = document.getElementById('userInput');
+  
+  // Store current session ID for chat context
+  let currentSessionId = null;
 
   // Drag and drop handlers
   ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
@@ -112,15 +115,22 @@ document.addEventListener('DOMContentLoaded', () => {
   function displayResults(data) {
     resultsSection.classList.remove('d-none');
     
+    // Store session_id from the result for chat context
+    if (data.session_id) {
+      currentSessionId = data.session_id;
+    }
+    
     // Display images
     imagePreview.innerHTML = '';
-    data.images.forEach(imagePath => {
-      const img = document.createElement('img');
-      img.src = imagePath;
-      img.alt = 'Extracted image';
-      img.loading = 'lazy';
-      imagePreview.appendChild(img);
-    });
+    if (data.images && data.images.length > 0) {
+      data.images.forEach(imagePath => {
+        const img = document.createElement('img');
+        img.src = imagePath;
+        img.alt = 'Extracted image';
+        img.loading = 'lazy';
+        imagePreview.appendChild(img);
+      });
+    }
 
     // Display initial summary
     addMessage(data.reply, 'bot');
@@ -139,16 +149,27 @@ document.addEventListener('DOMContentLoaded', () => {
     userInput.disabled = true;
 
     try {
+      // Build form data with session_id
+      const formData = new URLSearchParams();
+      formData.append('user_input', message);
+      if (currentSessionId) {
+        formData.append('session_id', currentSessionId);
+      }
+
       const response = await fetch('/chat', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/x-www-form-urlencoded',
         },
-        body: `user_input=${encodeURIComponent(message)}`
+        body: formData.toString()
       });
 
       const data = await response.json();
-      addMessage(data.reply, 'bot');
+      if (data.error) {
+        showAlert('Error: ' + data.error, 'danger');
+      } else {
+        addMessage(data.reply, 'bot');
+      }
     } catch (error) {
       showAlert('Error sending message: ' + error.message, 'danger');
     } finally {

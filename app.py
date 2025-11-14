@@ -53,6 +53,9 @@ app.config['MAX_CONTENT_LENGTH'] = 500 * 1024 * 1024  # 500MB max file size
 # Global progress tracking
 processing_status = {}
 
+# Global chat histories per session
+chat_histories = {}
+
 # MongoDB setup
 MONGODB_URI = os.environ.get('MONGODB_URI', 'mongodb://localhost:27017/')
 client = MongoClient(MONGODB_URI)
@@ -652,6 +655,7 @@ def get_result(session_id):
         return jsonify({
             "reply": summary,
             "images": image_urls,
+            "session_id": session_id,  # Add session_id to response
             "ocr_available": TESSERACT_AVAILABLE
         })
 
@@ -661,14 +665,81 @@ def get_result(session_id):
 @app.route("/chat", methods=["POST"])
 def chat():
     user_input = request.form.get("user_input")
+    session_id = request.form.get("session_id")  # Get session_id from request
+    
     if not user_input:
         return jsonify({"reply": "Please enter a valid message."})
     
+    # If no session_id, use general chat without PDF context
+    if not session_id:
+        try:
+            reply = call_gemini(user_input)
+            return jsonify({"reply": reply})
+        except Exception as e:
+            return jsonify({"error": f"Error processing request: {str(e)}"}), 500
+    
     try:
-        reply = call_gemini(user_input)
+        # Load the PDF summary for this session
+        summary_path = os.path.join(SUMMARY_FOLDER, f"{session_id}_summary.txt")
+        pdf_summary = None
+        
+        if os.path.exists(summary_path):
+            with open(summary_path, "r", encoding="utf-8") as f:
+                pdf_summary = f.read()
+        
+        # Initialize chat history for this session if it doesn't exist
+        if session_id not in chat_histories:
+            chat_histories[session_id] = []
+            
+            # Add system message with PDF context
+            if pdf_summary:
+                # Limit summary to avoid token limits (keep first 4000 chars)
+                summary_preview = pdf_summary[:4000] if len(pdf_summary) > 4000 else pdf_summary
+                system_message = f"""You are a helpful assistant answering questions about a PDF document. 
+Here is the summary of the document:
+
+{summary_preview}
+
+Please answer questions based on this document summary. If the question is not related to the document, politely say so."""
+                chat_histories[session_id].append({
+                    "role": "user",
+                    "parts": [system_message]
+                })
+        
+        # Call Gemini with chat history
+        if not gemini_model:
+            raise Exception("Gemini API key not configured")
+        
+        # Use start_chat for conversation history
+        # Get existing history (without current message)
+        history = chat_histories[session_id].copy() if session_id in chat_histories else []
+        
+        # Start chat with existing history
+        chat = gemini_model.start_chat(history=history)
+        
+        # Send the current user message
+        response = chat.send_message(user_input)
+        reply = response.text
+        
+        # Add user message and assistant response to history
+        chat_histories[session_id].append({
+            "role": "user",
+            "parts": [user_input]
+        })
+        chat_histories[session_id].append({
+            "role": "model",
+            "parts": [reply]
+        })
+        
+        # Keep history manageable (last 20 messages to avoid token limits)
+        if len(chat_histories[session_id]) > 20:
+            # Keep system message (first message) and last 19 messages
+            chat_histories[session_id] = [chat_histories[session_id][0]] + chat_histories[session_id][-19:]
+        
         return jsonify({"reply": reply})
     
     except Exception as e:
+        print(f"Error in chat endpoint: {e}")
         return jsonify({"error": f"Error processing request: {str(e)}"}), 500
 
 if __name__ == "__main__":

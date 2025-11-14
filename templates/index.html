@@ -98,6 +98,7 @@
       const chunkProgress = document.getElementById('chunkProgress');
 
       let currentSessionId = null;
+      let chatSessionId = null; // Store session_id for chat context
       let statusCheckInterval = null;
 
       // Drag and drop handlers
@@ -265,6 +266,11 @@
 
           const data = await response.json();
           
+          // Store session_id for chat context
+          if (data.session_id) {
+            chatSessionId = data.session_id;
+          }
+          
           // Display results
           resultsSection.classList.remove('d-none');
           progressSection.classList.add('d-none');
@@ -272,13 +278,15 @@
 
           // Display images
           imagePreview.innerHTML = '';
-          data.images.forEach(imagePath => {
-            const img = document.createElement('img');
-            img.src = imagePath;
-            img.alt = 'Extracted image';
-            img.loading = 'lazy';
-            imagePreview.appendChild(img);
-          });
+          if (data.images && data.images.length > 0) {
+            data.images.forEach(imagePath => {
+              const img = document.createElement('img');
+              img.src = imagePath;
+              img.alt = 'Extracted image';
+              img.loading = 'lazy';
+              imagePreview.appendChild(img);
+            });
+          }
 
           // Display summary
           summaryBox.textContent = data.reply;
@@ -303,16 +311,27 @@
         userInput.disabled = true;
 
         try {
+          // Build form data with session_id
+          const formData = new URLSearchParams();
+          formData.append('user_input', message);
+          if (chatSessionId) {
+            formData.append('session_id', chatSessionId);
+          }
+
           const response = await fetch('/chat', {
             method: 'POST',
             headers: {
               'Content-Type': 'application/x-www-form-urlencoded',
             },
-            body: `user_input=${encodeURIComponent(message)}`
+            body: formData.toString()
           });
 
           const data = await response.json();
-          addMessage(data.reply, 'bot');
+          if (data.error) {
+            showAlert('Error: ' + data.error, 'danger');
+          } else {
+            addMessage(data.reply, 'bot');
+          }
         } catch (error) {
           showAlert('Error sending message: ' + error.message, 'danger');
         } finally {
