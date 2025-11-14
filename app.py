@@ -700,7 +700,12 @@ Here is the summary of the document:
 
 {summary_preview}
 
-Please answer questions based on this document summary. If the question is not related to the document, politely say so."""
+Instructions:
+- Answer questions directly and naturally based on this document summary
+- Do NOT use phrases like "Based on the summary provided:" or "According to the document:" 
+- Answer as if you have direct knowledge of the document content
+- If the question is not related to the document, politely say so
+- Be concise and direct in your responses"""
                 chat_histories[session_id].append({
                     "role": "user",
                     "parts": [system_message]
@@ -720,6 +725,22 @@ Please answer questions based on this document summary. If the question is not r
         # Send the current user message
         response = chat.send_message(user_input)
         reply = response.text
+        
+        # Remove unwanted prefixes from response
+        prefixes_to_remove = [
+            "Based on the summary provided:",
+            "Based on the summary:",
+            "According to the document:",
+            "According to the summary:",
+            "Based on the document:"
+        ]
+        for prefix in prefixes_to_remove:
+            if reply.startswith(prefix):
+                reply = reply[len(prefix):].strip()
+                # Remove leading ** if present
+                if reply.startswith("**"):
+                    reply = reply[2:].strip()
+                break
         
         # Add user message and assistant response to history
         chat_histories[session_id].append({
