@@ -2,7 +2,7 @@ from flask import Flask, request, render_template, jsonify, session, redirect, u
 import fitz  # PyMuPDF for PDF processing
 from PIL import Image
 import os
-import ollama
+import google.generativeai as genai
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import io
 import uuid
@@ -27,7 +27,7 @@ except Exception:
     TESSERACT_AVAILABLE = False
 
 app = Flask(__name__)
-app.secret_key = os.urandom(24)  # For session management
+app.secret_key = os.environ.get('SECRET_KEY', os.urandom(24).hex())  # For session management
 
 UPLOAD_FOLDER = "uploads"
 IMAGE_FOLDER = "static/images"
@@ -54,9 +54,31 @@ app.config['MAX_CONTENT_LENGTH'] = 500 * 1024 * 1024  # 500MB max file size
 processing_status = {}
 
 # MongoDB setup
-client = MongoClient('mongodb://localhost:27017/')
+MONGODB_URI = os.environ.get('MONGODB_URI', 'mongodb://localhost:27017/')
+client = MongoClient(MONGODB_URI)
 db = client['pdf_chatbot']
 users = db['users']
+
+# Google Gemini setup
+GEMINI_API_KEY = os.environ.get('GEMINI_API_KEY')
+GEMINI_MODEL = os.environ.get('GEMINI_MODEL', 'gemini-2.0-flash-exp')  # Default to latest, can be set to gemini-1.5-pro or gemini-pro
+if GEMINI_API_KEY:
+    genai.configure(api_key=GEMINI_API_KEY)
+    try:
+        gemini_model = genai.GenerativeModel(GEMINI_MODEL)
+        print(f"Initialized Gemini model: {GEMINI_MODEL}")
+    except Exception as e:
+        print(f"Error initializing Gemini model {GEMINI_MODEL}: {e}")
+        # Fallback to available models
+        try:
+            gemini_model = genai.GenerativeModel('gemini-1.5-pro')
+            print("Fell back to gemini-1.5-pro")
+        except:
+            gemini_model = genai.GenerativeModel('gemini-pro')
+            print("Fell back to gemini-pro")
+else:
+    gemini_model = None
+    print("Warning: GEMINI_API_KEY not set. AI features will be disabled.")
 
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
@@ -199,6 +221,32 @@ def save_to_cache(cache_key, summary):
     with open(cache_file, 'w', encoding='utf-8') as f:
         f.write(summary)
 
+def call_gemini(prompt, images=None):
+    """Call Gemini API with text and optional images."""
+    if not gemini_model:
+        raise Exception("Gemini API key not configured")
+    
+    try:
+        # Prepare content parts
+        parts = [prompt]
+        
+        # Add images if provided
+        if images:
+            for img_path in images:
+                if os.path.exists(img_path):
+                    try:
+                        img = Image.open(img_path)
+                        parts.append(img)
+                    except Exception as e:
+                        print(f"Error loading image {img_path}: {e}")
+        
+        # Generate content
+        response = gemini_model.generate_content(parts)
+        return response.text
+    except Exception as e:
+        print(f"Gemini API error: {e}")
+        raise
+
 def summarize_chunk(args):
     """Summarize a single chunk of text."""
     chunk, chunk_index, total_chunks, images = args
@@ -221,15 +269,9 @@ def summarize_chunk(args):
         # Use a short/direct prompt for faster processing
         summary_prompt = f"TLDR; Summarize this text (Part {chunk_index + 1}/{total_chunks}). Be concise:\n\n{filtered_chunk}"
         
-        summary_response = ollama.chat(
-            model="llava",
-            messages=[{
-                "role": "user",
-                "content": summary_prompt,
-                "images": images if chunk_index == 0 else []  # Only send images with first chunk
-            }]
-        )
-        summary = summary_response["message"]["content"]
+        # Only send images with first chunk
+        images_to_send = images if chunk_index == 0 else None
+        summary = call_gemini(summary_prompt, images_to_send)
         
         # Cache the summary
         save_to_cache(cache_key, summary)
@@ -320,15 +362,7 @@ def process_large_pdf(pdf_path, session_id):
             else:
                 # For small documents, just use a single LLM call
                 summary_prompt = f"Summarize this document concisely:\n\n{combined_text}"
-                summary_response = ollama.chat(
-                    model="llava",
-                    messages=[{
-                        "role": "user",
-                        "content": summary_prompt,
-                        "images": all_images[:3]
-                    }]
-                )
-                final_summary = summary_response["message"]["content"]
+                final_summary = call_gemini(summary_prompt, all_images[:3] if all_images else None)
                 
             # Save the summary
             summary_path = os.path.join(SUMMARY_FOLDER, f"{session_id}_summary.txt")
@@ -627,14 +661,8 @@ def chat():
         return jsonify({"reply": "Please enter a valid message."})
     
     try:
-        response = ollama.chat(
-            model="llava",
-            messages=[{
-                "role": "user",
-                "content": user_input
-            }]
-        )
-        return jsonify({"reply": response["message"]["content"]})
+        reply = call_gemini(user_input)
+        return jsonify({"reply": reply})
     
     except Exception as e:
         return jsonify({"error": f"Error processing request: {str(e)}"}), 500
@@ -642,4 +670,6 @@ def chat():
 if __name__ == "__main__":
     if not TESSERACT_AVAILABLE:
         print("Warning: Tesseract OCR is not available. OCR functionality will be disabled.")
-    app.run(debug=True, threaded=True)
+    port = int(os.environ.get('PORT', 5000))
+    debug = os.environ.get('FLASK_ENV') == 'development'
+    app.run(host='0.0.0.0', port=port, debug=debug, threaded=True)
