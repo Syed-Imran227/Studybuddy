@@ -5,7 +5,7 @@ This guide will help you deploy PDF Buddy to Render.
 ## ✅ Current Configuration
 
 This project is now configured to use:
-- **Google Gemini 2.0 Flash Exp** (or 1.5 Pro) for AI features
+- **Google Gemini 2.5 Pro** for AI features
 - **MongoDB Cloud (Atlas)** or Render's MongoDB service for database
 
 ## ⚠️ Important Considerations
@@ -14,11 +14,12 @@ This project is now configured to use:
 The project uses Google Gemini API for AI features. You'll need:
 1. Get a Gemini API key from [Google AI Studio](https://makersuite.google.com/app/apikey)
 2. Set it as `GEMINI_API_KEY` environment variable
-3. Optionally set `GEMINI_MODEL` to specify the model (default: `gemini-2.0-flash-exp`)
+3. Optionally set `GEMINI_MODEL` to specify the model (default: `gemini-2.5-pro`)
 
 **Available Models:**
-- `gemini-2.0-flash-exp` (Latest, recommended)
-- `gemini-1.5-pro` (More capable, slower)
+- `gemini-2.5-pro` (Default, most capable)
+- `gemini-2.0-flash-exp` (Faster, good for quick responses)
+- `gemini-1.5-pro` (Previous generation, reliable)
 - `gemini-pro` (Fallback)
 
 ### 2. **MongoDB**
@@ -93,7 +94,7 @@ In your Render service settings, add these environment variables:
 SECRET_KEY=<generate a random secret key>
 MONGODB_URI=<your MongoDB connection string from Step 3>
 GEMINI_API_KEY=<your Gemini API key from Step 2>
-GEMINI_MODEL=gemini-2.0-flash-exp
+GEMINI_MODEL=gemini-2.5-pro
 FLASK_ENV=production
 PORT=10000
 ```

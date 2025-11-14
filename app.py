@@ -61,7 +61,7 @@ users = db['users']
 
 # Google Gemini setup
 GEMINI_API_KEY = os.environ.get('GEMINI_API_KEY')
-GEMINI_MODEL = os.environ.get('GEMINI_MODEL', 'gemini-2.0-flash-exp')  # Default to latest, can be set to gemini-1.5-pro or gemini-pro
+GEMINI_MODEL = os.environ.get('GEMINI_MODEL', 'gemini-2.5-pro')  # Default to Gemini 2.5 Pro
 if GEMINI_API_KEY:
     genai.configure(api_key=GEMINI_API_KEY)
     try:
@@ -71,11 +71,15 @@ if GEMINI_API_KEY:
         print(f"Error initializing Gemini model {GEMINI_MODEL}: {e}")
         # Fallback to available models
         try:
-            gemini_model = genai.GenerativeModel('gemini-1.5-pro')
-            print("Fell back to gemini-1.5-pro")
+            gemini_model = genai.GenerativeModel('gemini-2.0-flash-exp')
+            print("Fell back to gemini-2.0-flash-exp")
         except:
-            gemini_model = genai.GenerativeModel('gemini-pro')
-            print("Fell back to gemini-pro")
+            try:
+                gemini_model = genai.GenerativeModel('gemini-1.5-pro')
+                print("Fell back to gemini-1.5-pro")
+            except:
+                gemini_model = genai.GenerativeModel('gemini-pro')
+                print("Fell back to gemini-pro")
 else:
     gemini_model = None
     print("Warning: GEMINI_API_KEY not set. AI features will be disabled.")
