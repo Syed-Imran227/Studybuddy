@@ -2,7 +2,7 @@ from flask import Flask, request, render_template, jsonify, session, redirect, u
 import fitz  # PyMuPDF for PDF processing
 from PIL import Image
 import os
-import ollama
+import google.generativeai as genai
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import io
 import uuid
@@ -27,7 +27,7 @@ except Exception:
     TESSERACT_AVAILABLE = False
 
 app = Flask(__name__)
-app.secret_key = os.urandom(24)  # For session management
+app.secret_key = os.environ.get('SECRET_KEY', os.urandom(24).hex())  # For session management
 
 UPLOAD_FOLDER = "uploads"
 IMAGE_FOLDER = "static/images"
@@ -53,10 +53,39 @@ app.config['MAX_CONTENT_LENGTH'] = 500 * 1024 * 1024  # 500MB max file size
 # Global progress tracking
 processing_status = {}
 
+# Global chat histories per session
+chat_histories = {}
+
 # MongoDB setup
-client = MongoClient('mongodb://localhost:27017/')
+MONGODB_URI = os.environ.get('MONGODB_URI', 'mongodb://localhost:27017/')
+client = MongoClient(MONGODB_URI)
 db = client['pdf_chatbot']
 users = db['users']
+
+# Google Gemini setup
+GEMINI_API_KEY = os.environ.get('GEMINI_API_KEY')
+GEMINI_MODEL = os.environ.get('GEMINI_MODEL', 'gemini-2.5-pro')  # Default to Gemini 2.5 Pro
+if GEMINI_API_KEY:
+    genai.configure(api_key=GEMINI_API_KEY)
+    try:
+        gemini_model = genai.GenerativeModel(GEMINI_MODEL)
+        print(f"Initialized Gemini model: {GEMINI_MODEL}")
+    except Exception as e:
+        print(f"Error initializing Gemini model {GEMINI_MODEL}: {e}")
+        # Fallback to available models
+        try:
+            gemini_model = genai.GenerativeModel('gemini-2.0-flash-exp')
+            print("Fell back to gemini-2.0-flash-exp")
+        except:
+            try:
+                gemini_model = genai.GenerativeModel('gemini-1.5-pro')
+                print("Fell back to gemini-1.5-pro")
+            except:
+                gemini_model = genai.GenerativeModel('gemini-pro')
+                print("Fell back to gemini-pro")
+else:
+    gemini_model = None
+    print("Warning: GEMINI_API_KEY not set. AI features will be disabled.")
 
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
@@ -199,6 +228,32 @@ def save_to_cache(cache_key, summary):
     with open(cache_file, 'w', encoding='utf-8') as f:
         f.write(summary)
 
+def call_gemini(prompt, images=None):
+    """Call Gemini API with text and optional images."""
+    if not gemini_model:
+        raise Exception("Gemini API key not configured")
+    
+    try:
+        # Prepare content parts
+        parts = [prompt]
+        
+        # Add images if provided
+        if images:
+            for img_path in images:
+                if os.path.exists(img_path):
+                    try:
+                        img = Image.open(img_path)
+                        parts.append(img)
+                    except Exception as e:
+                        print(f"Error loading image {img_path}: {e}")
+        
+        # Generate content
+        response = gemini_model.generate_content(parts)
+        return response.text
+    except Exception as e:
+        print(f"Gemini API error: {e}")
+        raise
+
 def summarize_chunk(args):
     """Summarize a single chunk of text."""
     chunk, chunk_index, total_chunks, images = args
@@ -221,15 +276,9 @@ def summarize_chunk(args):
         # Use a short/direct prompt for faster processing
         summary_prompt = f"TLDR; Summarize this text (Part {chunk_index + 1}/{total_chunks}). Be concise:\n\n{filtered_chunk}"
         
-        summary_response = ollama.chat(
-            model="llava",
-            messages=[{
-                "role": "user",
-                "content": summary_prompt,
-                "images": images if chunk_index == 0 else []  # Only send images with first chunk
-            }]
-        )
-        summary = summary_response["message"]["content"]
+        # Only send images with first chunk
+        images_to_send = images if chunk_index == 0 else None
+        summary = call_gemini(summary_prompt, images_to_send)
         
         # Cache the summary
         save_to_cache(cache_key, summary)
@@ -320,15 +369,7 @@ def process_large_pdf(pdf_path, session_id):
             else:
                 # For small documents, just use a single LLM call
                 summary_prompt = f"Summarize this document concisely:\n\n{combined_text}"
-                summary_response = ollama.chat(
-                    model="llava",
-                    messages=[{
-                        "role": "user",
-                        "content": summary_prompt,
-                        "images": all_images[:3]
-                    }]
-                )
-                final_summary = summary_response["message"]["content"]
+                final_summary = call_gemini(summary_prompt, all_images[:3] if all_images else None)
                 
             # Save the summary
             summary_path = os.path.join(SUMMARY_FOLDER, f"{session_id}_summary.txt")
@@ -614,6 +655,7 @@ def get_result(session_id):
         return jsonify({
             "reply": summary,
             "images": image_urls,
+            "session_id": session_id,  # Add session_id to response
             "ocr_available": TESSERACT_AVAILABLE
         })
 
@@ -623,23 +665,107 @@ def get_result(session_id):
 @app.route("/chat", methods=["POST"])
 def chat():
     user_input = request.form.get("user_input")
+    session_id = request.form.get("session_id")  # Get session_id from request
+    
     if not user_input:
         return jsonify({"reply": "Please enter a valid message."})
     
+    # If no session_id, use general chat without PDF context
+    if not session_id:
+        try:
+            reply = call_gemini(user_input)
+            return jsonify({"reply": reply})
+        except Exception as e:
+            return jsonify({"error": f"Error processing request: {str(e)}"}), 500
+    
     try:
-        response = ollama.chat(
-            model="llava",
-            messages=[{
-                "role": "user",
-                "content": user_input
-            }]
-        )
-        return jsonify({"reply": response["message"]["content"]})
+        # Load the PDF summary for this session
+        summary_path = os.path.join(SUMMARY_FOLDER, f"{session_id}_summary.txt")
+        pdf_summary = None
+        
+        if os.path.exists(summary_path):
+            with open(summary_path, "r", encoding="utf-8") as f:
+                pdf_summary = f.read()
+        
+        # Initialize chat history for this session if it doesn't exist
+        if session_id not in chat_histories:
+            chat_histories[session_id] = []
+            
+            # Add system message with PDF context
+            if pdf_summary:
+                # Limit summary to avoid token limits (keep first 4000 chars)
+                summary_preview = pdf_summary[:4000] if len(pdf_summary) > 4000 else pdf_summary
+                system_message = f"""You are a helpful assistant answering questions about a PDF document. 
+Here is the summary of the document:
+
+{summary_preview}
+
+Instructions:
+- Answer questions directly and naturally based on this document summary
+- Do NOT use phrases like "Based on the summary provided:" or "According to the document:" 
+- Answer as if you have direct knowledge of the document content
+- If the question is not related to the document, politely say so
+- Be concise and direct in your responses"""
+                chat_histories[session_id].append({
+                    "role": "user",
+                    "parts": [system_message]
+                })
+        
+        # Call Gemini with chat history
+        if not gemini_model:
+            raise Exception("Gemini API key not configured")
+        
+        # Use start_chat for conversation history
+        # Get existing history (without current message)
+        history = chat_histories[session_id].copy() if session_id in chat_histories else []
+        
+        # Start chat with existing history
+        chat = gemini_model.start_chat(history=history)
+        
+        # Send the current user message
+        response = chat.send_message(user_input)
+        reply = response.text
+        
+        # Remove unwanted prefixes from response
+        prefixes_to_remove = [
+            "Based on the summary provided:",
+            "Based on the summary:",
+            "According to the document:",
+            "According to the summary:",
+            "Based on the document:"
+        ]
+        for prefix in prefixes_to_remove:
+            if reply.startswith(prefix):
+                reply = reply[len(prefix):].strip()
+                # Remove leading ** if present
+                if reply.startswith("**"):
+                    reply = reply[2:].strip()
+                break
+        
+        # Add user message and assistant response to history
+        chat_histories[session_id].append({
+            "role": "user",
+            "parts": [user_input]
+        })
+        chat_histories[session_id].append({
+            "role": "model",
+            "parts": [reply]
+        })
+        
+        # Keep history manageable (last 20 messages to avoid token limits)
+        if len(chat_histories[session_id]) > 20:
+            # Keep system message (first message) and last 19 messages
+            chat_histories[session_id] = [chat_histories[session_id][0]] + chat_histories[session_id][-19:]
+        
+        return jsonify({"reply": reply})
     
     except Exception as e:
+        print(f"Error in chat endpoint: {e}")
         return jsonify({"error": f"Error processing request: {str(e)}"}), 500
 
 if __name__ == "__main__":
     if not TESSERACT_AVAILABLE:
         print("Warning: Tesseract OCR is not available. OCR functionality will be disabled.")
-    app.run(debug=True, threaded=True)
+    port = int(os.environ.get('PORT', 5000))
+    debug = os.environ.get('FLASK_ENV') == 'development'
+    app.run(host='0.0.0.0', port=port, debug=debug, threaded=True)
